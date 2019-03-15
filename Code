@@ -1,0 +1,346 @@
+module Inf2d1 where
+
+import Data.List (sortBy)
+import Debug.Trace
+import TTTGame
+
+gridLength_search::Int
+gridLength_search = 6
+gridWidth_search :: Int
+gridWidth_search = 6
+
+
+
+{- NOTES:
+
+-- DO NOT CHANGE THE NAMES OR TYPE DEFINITIONS OF THE FUNCTIONS!
+You can write new auxillary functions, but don't change the names or type definitions
+of the functions which you are asked to implement.
+
+-- Comment your code.
+
+-- You should submit this file, and only this file, when you have finished the assignment.
+
+-- The deadline is the  13th March 2018 at 3pm.
+
+-- See the assignment sheet and document files for more information on the predefined game functions.
+
+-- See the README for description of a user interface to test your code.
+
+-- See www.haskell.org for haskell revision.
+
+-- Useful haskell topics, which you should revise:
+-- Recursion
+-- The Maybe monad
+-- Higher-order functions
+-- List processing functions: map, fold, filter, sortBy ...
+
+-- See Russell and Norvig Chapters 3 for search algorithms,
+-- and Chapter 5 for game search algorithms.
+
+-}
+
+-- Section 1: Uniform Search
+
+-- 6 x 6 grid search states
+
+-- The Node type defines the position of the robot on the grid.
+-- The Branch type synonym defines the branch of search through the grid.
+
+type Node = (Int,Int)
+type Branch = [(Int,Int)]
+
+badNodesList::[Node]
+-- This is your list of bad nodes. You should experiment with it to make sure your algorithm covers different cases.
+badNodesList = []
+
+-- The maximum depth this search can reach
+-- TODO: Fill in the maximum depth and justify your choice
+maxDepth::Int
+maxDepth= gridLength_search * gridWidth_search - length badNodesList;
+-- Why did you choose this number?
+-- This is the number of free squares and it is the upper bound for maxdepth
+
+
+-- The next function should return all the possible continuations of input search branch through the grid.
+-- Remember that the robot can only move up, down, left and right, and can't move outside the grid.
+-- The current location of the robot is the head of the input branch.
+-- Your function should return an empty list if the input search branch is empty.
+-- This implementation of next function does not backtrace branches.
+
+next::Branch -> [Branch]
+next [] =  []
+next branch@((x,y):xs) = filter (not.null) (verify (x+1,y) branch : verify (x-1,y) branch : verify (x,y+1) branch : [verify (x,y-1) branch])
+
+-- |The checkArrival function should return true if the current location of the robot is the destination, and false otherwise.
+ -- Note that this is the right type declaration for this function. You might have an old version of the Assignment PDF that names this wrongly.
+checkArrival::Node -> Node -> Bool
+checkArrival destination curNode = destination == curNode
+
+
+-- Section 3 Uniformed Search
+-- | Breadth-First Searchc
+-- The breadthFirstSearch function should use the next function to expand a node,
+-- and the checkArrival function to check whether a node is a destination position.
+-- The function should search nodes using a breadth first search order.
+
+
+
+breadthFirstSearch::Node->(Branch -> [Branch])->[Branch]->[Node]->Maybe Branch
+breadthFirstSearch destination next branches exploredList
+  | branches == [] = Nothing
+  | checkArrival destination  (head (last branches)) == True = Just (last branches)
+  | otherwise = breadthFirstSearch destination next queue new_exploredList
+    where new_branches = filter (\x -> not (head x `elem` exploredList)) $ next (last branches)
+          queue =  new_branches ++ (init branches)
+          new_exploredList = (map (head) new_branches) ++ exploredList
+
+
+
+
+-- | Depth-First Search
+-- The depthFirstSearch function is similiar to the breadthFirstSearch function,
+-- except it searches nodes in a depth first search order.
+depthFirstSearch::Node->(Branch -> [Branch])->[Branch]-> [Node]-> Maybe Branch
+depthFirstSearch destination next branches exploredList
+  | branches == [] = Nothing
+  | checkArrival destination  (head (head branches)) == True = Just (head branches)
+  | otherwise = depthFirstSearch destination next stack new_exploredList
+    where new_branches = filter (\x -> not (head x `elem` exploredList)) $ next (head branches)
+          stack = new_branches ++ (tail branches)
+          new_exploredList = (map (head) new_branches) ++ exploredList
+
+-- | Depth-Limited Search
+-- The depthLimitedSearch function is similiar to the depthFirstSearch function,
+-- except its search is limited to a pre-determined depth, d, in the search tree.
+
+depthLimitedSearch::Node->(Branch -> [Branch])->[Branch]-> Int-> Maybe Branch
+depthLimitedSearch destination next branches d
+  | branches == [] = Nothing
+  | checkArrival destination  (head (head branches)) == True = Just (head branches)
+  | otherwise = depthLimitedSearch destination next stack d
+  where new_branches = if length (head branches) < d then next (head branches) else []
+        stack = new_branches ++ (tail branches)
+
+
+-- | Iterative-deepening search
+-- The iterDeepSearch function should initially search nodes using depth-first to depth d,
+-- and should increase the depth by 1 if search is unsuccessful.
+-- This process should be continued until a solution is found.
+-- Each time a solution is not found the depth should be increased.
+iterDeepSearch:: Node-> (Branch -> [Branch])->Node -> Int-> Maybe Branch
+iterDeepSearch destination next initialNode d
+  | depthLimitedSearch destination next [[initialNode]] d == Nothing = iterDeepSearch destination next initialNode (d+1)
+  | otherwise = depthLimitedSearch destination next [[initialNode]] d
+
+-- | Section 4: Informed search
+
+-- Manhattan distance heuristic
+-- This function should return the manhattan distance between the 'position' point and the 'destination'.
+
+manhattan::Node->Node->Int
+manhattan position destination = abs((fst position) - (fst destination)) + abs((snd position) - (snd destination))
+
+-- | Best-First Search
+-- The bestFirstSearch function uses the checkArrival function to check whether a node is a destination position,
+-- and the heuristic function (of type Node->Int) to determine the order in which nodes are searched.
+-- Nodes with a lower heuristic value should be searched before nodes with a higher heuristic value.
+
+bestFirstSearch::Node->(Branch -> [Branch])->(Node->Int)->[Branch]-> [Node]-> Maybe Branch
+bestFirstSearch destination next heuristic branches exploredList
+  | null branches = Nothing
+  | checkArrival destination (head pop_branch) = Just pop_branch
+  | otherwise = aStarSearch destination next heuristic cost queue exploredList
+    where pop_branch = last branches
+          priority_sort a b
+            | heuristic (head a) + cost a < heuristic (head b) + cost b = GT
+            | otherwise = LT
+          queue =  sortBy priority_sort (next pop_branch ++ init branches)
+
+-- | A* Search
+-- The aStarSearch function is similar to the bestFirstSearch function
+-- except it includes the cost of getting to the state when determining the value of the node.
+
+aStarSearch::Node->(Branch -> [Branch])->(Node->Int)->(Branch ->Int)->[Branch]-> [Node]-> Maybe Branch
+aStarSearch destination next heuristic cost branches exploredList
+  | null branches = Nothing
+  | checkArrival destination (head pop_branch) = Just pop_branch
+  | otherwise = aStarSearch destination next heuristic cost queue exploredList
+    where pop_branch = last branches
+          priority_sort a b
+            | heuristic (head a) + cost a < heuristic (head b) + cost b = GT
+            | otherwise = LT
+          queue =  sortBy priority_sort (next pop_branch ++ init branches)
+
+-- | The cost function calculates the current cost of a trace, where each movement from one state to another has a cost of 1.
+cost :: Branch  -> Int
+cost branch = length branch
+
+
+-- | Section 5: Games
+-- See TTTGame.hs for more detail on the functions you will need to implement for both games' minimax and alphabeta searches.
+
+
+
+-- | Section 5.1 Tic Tac Toe
+
+
+-- | The eval function should be used to get the value of a terminal state.
+-- A positive value (+1) is good for max player. The human player will be max.
+-- A negative value (-1) is good for min player. The computer will be min.
+-- A value 0 represents a draw.
+
+eval :: Game -> Int
+-- simply checks if player 1 has won, and if so returns 1, else check for player 0 and if so returns -1, else returns 0 as draw
+eval game
+  | checkWin game 1 == True = 1
+  | checkWin game 0 == True = -1
+  | otherwise = 0
+
+-- | The minimax function should return the minimax value of the state (without alphabeta pruning).
+-- The eval function should be used to get the value of a terminal state.
+
+maxValue :: Player -> Game -> Int
+maxValue p g
+  | terminal g = eval g
+  | otherwise = maximum (map (minValue (switch p)) (moves g (switch p)))
+
+minValue :: Player -> Game -> Int
+minValue p g
+  | terminal g = eval g
+  | otherwise = minimum (map (maxValue (switch p)) (moves g (switch p)))
+
+minimax:: Game->Player->Int
+minimax game player
+  | terminal game == True = eval game
+  | player == 1 = maxValue (switch player) game
+  | otherwise = minValue (switch player) game
+
+-- | The alphabeta function should return the minimax value using alphabeta pruning.
+-- The eval function should be used to get the value of a terminal state.
+
+maxRec :: Player -> [Game] -> Int -> Int -> Int -> Int
+maxRec _ [] _ _ v = v
+maxRec p g a b v
+  | v' >= b = v'
+  | otherwise = maxRec p (tail g) a' b v'
+    where v' = max v (minValue_ab (switch p) (head g) a b)
+          a' = max a v'
+
+minRec :: Player -> [Game] -> Int -> Int -> Int -> Int
+minRec _ [] _ _ v = v
+minRec p g a b v
+  | v' <= a = v'
+  | otherwise = minRec p (tail g) a b' v'
+    where v' = min v (maxValue_ab (switch p) (head g) a b)
+          b' = min b v'
+
+minValue_ab :: Player -> Game -> Int -> Int -> Int
+minValue_ab p g a b
+  | terminal g = eval g
+  | otherwise = minRec p (moves g p) a b 2
+
+maxValue_ab :: Player -> Game -> Int -> Int -> Int
+maxValue_ab p g a b
+  | terminal g = eval g
+  | otherwise = maxRec p (moves g p) a b (-2)
+
+alphabeta:: Game->Player->Int
+alphabeta game player
+  | terminal game = eval game
+  | player == 0 = minValue_ab (player) game (-2) 2
+  | otherwise = maxValue_ab (player) game (-2) 2
+
+
+-- | Section 5.2 Wild Tic Tac Toe
+
+
+
+-- | The evalWild function should be used to get the value of a terminal state.
+-- It should return 1 if either of the move types is in the correct winning position.
+-- A value 0 represents a draw.
+
+evalWild :: Game -> Int
+-- simply gives the player who reached(!) the terminal state +1  if either the x's or the o's are in the correct position.
+evalWild game
+  | checkWin game 1 == True = 1
+  | checkWin game 0 == True = 1
+  | otherwise = 0
+
+
+-- | The alphabetaWild function should return the minimax value using alphabeta pruning.
+-- The evalWild function should be used to get the value of a terminal state. Note that this will now always return 1 for any player who reached the terminal state.
+-- You will have to modify this output depending on the player. If a move by the max player sent(!) the game into a terminal state you should give a +1 reward.
+-- If the min player sent the game into a terminal state you should give -1 reward.
+
+maxRecWild :: Player -> [Game] -> Int -> Int -> Int -> Int
+maxRecWild _ [] _ _ v = v
+maxRecWild p g a b v
+  | v' >= b = v'
+  | otherwise = maxRecWild p (tail g) a' b v'
+    where v' = max v (minValue_abWild (switch p) (head g) a b)
+          a' = max a v'
+
+minRecWild :: Player -> [Game] -> Int -> Int -> Int -> Int
+minRecWild _ [] _ _ v = v
+minRecWild p g a b v
+  | v' <= a = v'
+  | otherwise = minRecWild p (tail g) a b' v'
+    where v' = min v (maxValue_abWild (switch p) (head g) a b)
+          b' = min b v'
+
+
+minValue_abWild:: Player -> Game -> Int -> Int -> Int
+minValue_abWild p g a b
+  | terminal g = evalWild g
+  | otherwise = minRecWild p (movesWild g p) a b 2
+
+maxValue_abWild:: Player -> Game -> Int -> Int -> Int
+maxValue_abWild p g a b
+  | terminal g = (-1) * evalWild g
+  | otherwise = maxRecWild p (movesWild g p) a b (-2)
+
+alphabetaWild:: Game->Player->Int
+alphabetaWild game player
+  | terminal game && player == 1 = (-1) * evalWild game
+  | terminal game && player == 0 = evalWild game
+  | player == 0 = minValue_abWild player game (-2) 2
+  | otherwise = maxValue_abWild player game (-2) 2
+
+-- | End of official assignment. However, if you want to also implement the minimax function to work for Wild Tic Tac Toe you can have a go at it here. This is NOT graded.
+
+
+-- | The minimaxWild function should return the minimax value of the state (without alphabeta pruning).
+-- The evalWild function should be used to get the value of a terminal state.
+
+minimaxWild:: Game->Player->Int
+minimaxWild game player =undefined
+
+
+-- | Auxiliary Functions
+-- Include any auxiliary functions you need for your algorithms here.
+-- For each function, state its purpose and comment adequately.
+-- Functions which increase the complexity of the algorithm will not get additional scores
+
+-- sort function in terms of heuristics, to use in Best First Search
+
+-- sortGT::[Node]->[Node]->(Node->Int)->Ordering
+-- sortGT a b heuristic
+--   | heuristic (head a) < heuristic (head b) = GT
+--   | otherwise = LT
+
+-- verify function is for not going on a previous node of the branch, not being out of the grid and not going on a node from badnodeslist
+verify::Node->Branch->Branch
+verify (x,y) br
+  | (not (elem (x,y) badNodesList)) && (outOfBounds (x,y) == True) && (not (elem (x,y) br)) = (x,y):br
+  | otherwise = []
+
+
+-- outOfBounds is for checking if we go out of grid
+outOfBounds::Node -> Bool
+outOfBounds (x,y)
+  | x<1 = False
+  | x>gridLength_search = False
+  | y<1 = False
+  | y>gridWidth_search = False
+  | otherwise = True
